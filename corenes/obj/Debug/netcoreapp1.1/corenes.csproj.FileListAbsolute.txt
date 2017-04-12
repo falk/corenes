@@ -1,9 +1,0 @@
-c:\users\falk\documents\visual studio 2017\Projects\corenes\corenes\bin\Debug\netcoreapp1.1\corenes.deps.json
-c:\users\falk\documents\visual studio 2017\Projects\corenes\corenes\bin\Debug\netcoreapp1.1\corenes.runtimeconfig.json
-c:\users\falk\documents\visual studio 2017\Projects\corenes\corenes\bin\Debug\netcoreapp1.1\corenes.runtimeconfig.dev.json
-c:\users\falk\documents\visual studio 2017\Projects\corenes\corenes\bin\Debug\netcoreapp1.1\corenes.dll
-c:\users\falk\documents\visual studio 2017\Projects\corenes\corenes\bin\Debug\netcoreapp1.1\corenes.pdb
-c:\users\falk\documents\visual studio 2017\Projects\corenes\corenes\obj\Debug\netcoreapp1.1\corenes.csprojResolveAssemblyReference.cache
-c:\users\falk\documents\visual studio 2017\Projects\corenes\corenes\obj\Debug\netcoreapp1.1\corenes.AssemblyInfo.cs
-c:\users\falk\documents\visual studio 2017\Projects\corenes\corenes\obj\Debug\netcoreapp1.1\corenes.dll
-c:\users\falk\documents\visual studio 2017\Projects\corenes\corenes\obj\Debug\netcoreapp1.1\corenes.pdb
