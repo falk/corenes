@@ -1,10 +1,11 @@
 ﻿using System;
+using Microsoft.Xna.Framework;
 
 namespace corenes
 {
-    internal class Emulator
+    internal class Emulator : Game
     {
-        private Cartridge cartridge;
+        public Cartridge cartridge;
         public Memory memory;
         public Cpu cpu;
         public Ppu ppu;

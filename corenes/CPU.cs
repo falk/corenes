@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Threading;
 
 namespace corenes
 {
@@ -37,7 +38,7 @@ namespace corenes
         // Program Counter (PC)
         private ushort _pc;
 
-        private int _cycles;
+        public int _cycles;
 
         private StepParameters _stepParameters;
 
@@ -52,9 +53,9 @@ namespace corenes
         private byte _v;
         private byte _n;
 
-        public Cpu(Emulator memory)
+        public Cpu(Emulator emulator)
         {
-            Memory = memory;
+            Memory = emulator.memory;
             this._stepParameters = new StepParameters();
         }
 
@@ -94,7 +95,13 @@ namespace corenes
 
         public int Step()
         {
-            byte opCode = Memory.read(_pc);
+            if (_stall > 0)
+            {
+                _stall--;
+                return 1;
+            }
+
+            byte opCode = Memory.Read(_pc);
             string instructionName = _instructionNames[opCode];
 
 
@@ -119,16 +126,16 @@ namespace corenes
             {
                 // Absolute
                 case 1:
-                    address = Memory.read((ushort) (_pc + 1));
+                    address = Read16((ushort) (_pc + 1));
                     break;
                 // Absolute X
                 case 2:
-                    address = (ushort) (Memory.read((ushort) (_pc + 1)) + _x);
+                    address = (ushort) (Read16((ushort) (_pc + 1)) + _x);
                     samePage = SamePage((ushort) (address - _x), address);
                     break;
                 // Absolute Y
                 case 3:
-                    address = (ushort) (Memory.read((ushort) (_pc + 1)) + _y);
+                    address = (ushort) (Read16((ushort) (_pc + 1)) + _y);
                     samePage = SamePage((ushort) (address - _y), address);
                     break;
                 // Immediate
@@ -143,7 +150,7 @@ namespace corenes
                     break;
                 // Indexed indirect
                 case 7:
-                    address = Read16Bug((ushort) (Memory.read((ushort) (_pc + 1)) + _x));
+                    address = Read16Bug((ushort) (Memory.Read((ushort) (_pc + 1)) + _x));
                     break;
                 // Indirect
                 case 8:
@@ -151,12 +158,12 @@ namespace corenes
                     break;
                 // Indirect indexed
                 case 9:
-                    address = (ushort) (Read16Bug(Memory.read( (ushort) (_pc + 1))) + _y);
+                    address = (ushort) (Read16Bug(Memory.Read( (ushort) (_pc + 1))) + _y);
                     samePage = SamePage((ushort) (address - _y), address);
                     break;
                 // Relative
                 case 10:
-                    var offset = Memory.read((ushort) (_pc + 1));
+                    var offset = Memory.Read((ushort) (_pc + 1));
                     if (offset < 0x80)
                     {
                         address = (ushort)(_pc + 2 + offset);
@@ -168,21 +175,20 @@ namespace corenes
                     break;
                 // Zero page
                 case 11:
-                    address = Memory.read((ushort) (_pc + 1));
+                    address = Memory.Read((ushort) (_pc + 1));
                     break;
                 // Zero page X
                 case 12:
-                    address = (ushort) (Memory.read((ushort) (_pc + 1)) + _x);
+                    address = (ushort) (Memory.Read((ushort) (_pc + 1)) + _x);
                     break;
                 // Zero page Y
                 case 13:
-                    address = (ushort) (Memory.read((ushort) (_pc + 1)) + _y);
+                    address = (ushort) (Memory.Read((ushort) (_pc + 1)) + _y);
                     break;
             }
 
 
             _cycles += _instructionCycles[opCode];
-
             if (samePage)
             {
                 _cycles += _instructionPageCycles[opCode];
@@ -205,9 +211,228 @@ namespace corenes
                 Console.WriteLine("Missing op: " + instructionName);
                 throw;
             }
-            Console.WriteLine(instructionName);
+
+            if (_cycles > 57180)
+            //if (_cycles < 1000)
+            {
+                Console.WriteLine(
+                    _cycles +
+                    " " + _pc.ToString("X2") +
+                    " " + instructionName +
+                    " " + opCode.ToString("X2") +
+                    " " + Memory.Read((ushort)(_pc)).ToString("X2") +
+                    " " + Memory.Read((ushort)(_pc + 1)).ToString("X2") +
+                    " " + Memory.Read((ushort)(_pc + 2)).ToString("X2")
+                );
+            }
 
             return _cycles - cycles;
+        }
+
+        // CLC - Clear Carry Flag
+        private void CLC(StepParameters parms)
+        {
+            _c = 0;
+        }
+
+        private void SEC(StepParameters parms)
+        {
+            _c = 1;
+        }
+
+        // DEC - Decrement Memory
+        private void DEC(StepParameters parms)
+        {
+            byte value = (byte) (Memory.Read(parms.address) - 1);
+            Memory.Write(parms.address, value);
+            setZN(value);
+        }
+
+        // ADC - Add with Carry
+        private void ADC(StepParameters parms)
+        {
+            var a = _a;
+            var b = Memory.Read(parms.address);
+            var c = _c;
+
+            _a = (byte) (a + b + c);
+
+            setZN(_a);
+
+            // Carry?
+            if (a + b + + c >= 0xFF)
+            {
+                _c = 1;
+            }
+            else
+            {
+                _c = 0;
+            }
+            if (((a ^ b) & 0x80) == 0 && ((a ^ _a) & 0x80) != 0)
+            {
+                _v = 1;
+            }
+            else
+            {
+                _v = 0;
+            }
+        }
+
+
+        // EOR - Exclusive OR
+        private void EOR(StepParameters parms)
+        {
+            _a = (byte) (_a ^ Memory.Read(parms.address));
+            setZN(_a);
+        }
+
+        // SBC - Subtract with Carry
+        private void SBC(StepParameters parms)
+        {
+            var a = _a;
+            var b = Memory.Read(parms.address);
+            var c = _c;
+
+            _a = (byte) (a - b - (1 - c));
+
+            setZN(_a);
+
+            // cast to int?
+            if ((a - b - 1 - c) >= 0)
+            {
+                _c = 1;
+            }
+            else
+            {
+                _c = 0;
+            }
+            if (((a ^ b) &0x80) != 0 && ((a ^ _a) & 0x80) != 0)
+            {
+                _v = 1;
+            } else {
+                _v = 0;
+            }
+        }
+
+        private void TXA(StepParameters parms)
+        {
+            _a = _x;
+            setZN(_a);
+        }
+
+        // TAX - Transfer Accumulator to X
+        private void TAX(StepParameters parms)
+        {
+            _x = _a;
+            setZN(_x);
+        }
+        private void TAY(StepParameters parms)
+        {
+            _y = _a;
+            setZN(_y);
+        }
+
+        private void ROL(StepParameters parms)
+        {
+            // Accu
+            if (parms.mode == 4)
+            {
+                var c = _c;
+                _c = (byte)((_a >> 7) & 1);
+                _a = (byte) (_a << 1 | c);
+                setZN(_a);
+            }
+            else
+            {
+                var c = _c;
+                byte value = Memory.Read(parms.address);
+                _c = (byte)((value >> 7) & 1);
+                _a = (byte)(value << 1 | c);
+                Memory.Write(parms.address, value);
+                setZN(value);
+            }
+        }
+
+        private void ROR(StepParameters parms)
+        {
+            // Accu
+            if (parms.mode == 4)
+            {
+                var c = _c;
+                _c = (byte) (_a & 1);
+                _a = (byte) (_a >> 1 | c);
+                setZN(_a);
+            }
+            else
+            {
+                var c = _c;
+                byte value = Memory.Read(parms.address);
+                _c = (byte) ((value >> 7) & 1);
+                _a = (byte) (value << 1 | c);
+                Memory.Write(parms.address, value);
+                setZN(value);
+            }
+        }
+
+        // PHA - Push Accumulator
+            private void PHA(StepParameters parms)
+        {
+            push(_a);
+        }
+
+        // PLA - Pop Accumulator
+        private void PLA(StepParameters parms)
+        {
+            _a = Pull();
+            setZN(_a);
+        }
+
+
+        // ASL - Arithmetic Shift Left
+        private void ASL(StepParameters parms)
+        {
+            // Accu
+            if (parms.mode == 4)
+            {
+                _c = (byte) ((_a >> 7) & 1);
+                _a <<= 1;
+                setZN(_a);
+            }
+            else
+            {
+                byte value = Memory.Read(parms.address);
+                _c = (byte) ((value >> 7) & 1);
+                value <<= 1;
+                Memory.Write(parms.address, value);
+                setZN(value);
+            }
+        }
+
+        // LSR - Logical Shift Right
+        private void LSR(StepParameters parms)
+        {
+            // Accu
+            if (parms.mode == 4)
+            {
+                _c = (byte) (_a & 1);
+                _a >>= 1;
+                setZN(_a);
+            }
+            else
+            {
+                byte value = Memory.Read(parms.address);
+                _c = (byte) (value & 1);
+                value >>= 1;
+                Memory.Write(parms.address, value);
+                setZN(value);
+            }
+        }
+
+        private void INC(StepParameters parms)
+        {
+            byte value = (byte) (Memory.Read(parms.address) + 1);
+            Memory.Write(parms.address, value);
+            setZN(value);
         }
 
         // Non-Maskable Interrupt
@@ -230,6 +455,41 @@ namespace corenes
             _cycles += 7;
         }
 
+        // CPX - Compare X
+        private void CPX(StepParameters parms)
+        {
+            byte value = Memory.Read(parms.address);
+            Compare(_x, value);
+        }
+
+        // RTS - Return from sub routine
+        private void RTS(StepParameters parms)
+        {
+            _pc = (ushort) (Pull16() + 1);
+        }
+
+        // Pop 2 bytes from stack
+        private byte Pull16()
+        {
+            byte low = Pull();
+            byte high = Pull();
+            return (byte) (high << 8 | low);
+        }
+
+        // Pop from stack
+        private byte Pull()
+        {
+            _sp++;
+            return Memory.Read((ushort) (0x100 | _sp));
+        }
+
+        // CPY - Compare Y
+        private void CPY(StepParameters parms)
+        {
+            byte value = Memory.Read(parms.address);
+            Compare(_y, value);
+        }
+
         // BCC - Branch if Carry Clear
         private void BCC(StepParameters parms)
         {
@@ -240,6 +500,47 @@ namespace corenes
             }
         }
 
+        private void BIT(StepParameters parms)
+        {
+            byte value = Memory.Read(parms.address);
+            _v = (byte) ((value >> 6) & 1);
+            setZ((byte) (value & _a));
+            setN(value);
+        }
+
+        // INY - Increment Y
+        private void INY(StepParameters parms)
+        {
+            _y++;
+            setZN(_y);
+        }
+
+        // INX - Increment X
+        private void INX(StepParameters parms)
+        {
+            _x++;
+            setZN(_x);
+        }
+
+        private void JMP(StepParameters parms)
+        {
+            _pc = parms.address;
+        }
+
+        // ORA - Logical Inclusive OR
+        private void ORA(StepParameters parms)
+        {
+            _a = (byte) (_a | Memory.Read(parms.address));
+            setZN(_a);
+        }
+
+        private void AND(StepParameters parms)
+        {
+            _a = (byte) (_a & Memory.Read(parms.address));
+            setZN(_a);
+        }
+
+
         // BCS - Branch if Carry Set
         private void BCS(StepParameters parms)
         {
@@ -248,6 +549,13 @@ namespace corenes
                 _pc = parms.address;
                 addBranchCycles(parms);
             }
+        }
+
+        // RTI - Return from Interrupt
+        private void RTI(StepParameters parms)
+        {
+            SetFlags((byte) (Pull() & 0xEF | 0x20));
+            _pc = (ushort) Pull16();
         }
 
         // BEQ - Branch if Equal
@@ -305,21 +613,21 @@ namespace corenes
         // Store accumulator
         private void STA(StepParameters parms)
         {
-            Memory.write(parms.address, _a);           
+            Memory.Write(parms.address, _a);           
         }
 
         private ushort Read16(ushort address)
         {
-            var low = Memory.read(address);
-            var high = Memory.read((ushort) (address + 1));
-            return (ushort) (high << 8 | low);
+            var low = Memory.Read(address);
+            var high = Memory.Read((ushort) (address + 1)) << 8;
+            return (ushort) (high | low);
         }
 
         private ushort Read16Bug(ushort address)
         {
             ushort b = (ushort)((address & 0xFF00) | (address + 1));
-            var low = Memory.read(address);
-            var high = Memory.read(b);
+            var low = Memory.Read(address);
+            var high = Memory.Read(b);
             return (ushort)(high << 8 | low);
         }
 
@@ -332,7 +640,7 @@ namespace corenes
         // LDA - Load Accumulator
         private void LDA(StepParameters parms)
         {
-            _a = Memory.read(parms.address);
+            _a = Memory.Read(parms.address);
             setZN(_a);
         }
 
@@ -345,10 +653,37 @@ namespace corenes
             _pc = Read16(0xFFFE);
         }
 
+        // CMP - Compare
+        private void CMP(StepParameters parms)
+        {
+            byte value = Memory.Read(parms.address);
+            Compare(_a, value);
+        }
+
+        private void Compare(byte a, byte b)
+        {
+            setZN((byte) (a - b));
+            if (a >= b)
+            {
+                _c = 1;
+            }
+            else
+            {
+                _c = 0;
+            }
+        }
+
+        // LDY - Load Y Register
+        private void LDY(StepParameters parms)
+        {
+            _y = Memory.Read(parms.address);
+            setZN(_y);
+        }
+
         // LDX - Load X Register
         private void LDX(StepParameters parms)
         {
-            _x = Memory.read(parms.address);
+            _x = Memory.Read(parms.address);
             setZN(_x);
         }
 
@@ -381,14 +716,7 @@ namespace corenes
         // Sets the negative flag if the argument is negative (high bit is set)
         private void setN(byte value)
         {
-            if ((value & 0x80) != 0)
-            {
-                _n = 1;
-            }
-            else
-            {
-                _n = 0;
-            }
+            _n = (byte) ((value & 0x80) != 0 ? 1 : 0);
         }
 
         // Push 2 bytes to stack
@@ -402,7 +730,7 @@ namespace corenes
 
         private void push(byte value)
         {
-            Memory.write((ushort) (0x100 | _sp), value);
+            Memory.Write((ushort) (0x100 | _sp), value);
             _sp--;
         }
 
@@ -412,10 +740,42 @@ namespace corenes
             _d = 0;
         }
 
+         // DEX - Decrement X
+        private void DEX(StepParameters parms)
+        {
+            _x--;
+            setZN(_x);
+        }
+
+         // DEX - Decrement X
+        private void DEY(StepParameters parms)
+        {
+            _y--;
+            setZN(_y);
+        }
+
+        // JSR - Jump to sub routine
+        private void JSR(StepParameters parms)
+        {
+            push16((ushort) (_pc - 1));
+            _pc = parms.address;
+        }
 
         private void PHP(StepParameters parms)
         {
             push((byte) (GetFlags() | 0x10));
+        }
+
+        // STX - Store X
+        private void STX(StepParameters parms)
+        {
+            Memory.Write(parms.address, _x);
+        }
+
+        // STY - Store y
+        private void STY(StepParameters parms)
+        {
+            Memory.Write(parms.address, _y);
         }
 
         // SEI - Set Interrupt Disable
@@ -551,6 +911,7 @@ namespace corenes
         };
 
         private Interrupts _interrupt;
+        public int _stall;
 
         public void TriggerNMI()
         {

@@ -34,11 +34,14 @@ namespace corenes
         private bool _nmiPrevious;
         private int _spriteCount;
         private int _spriteSize;
-        private byte[] _oamData;
+        private byte[] _oamData = new byte[256];
         private int[] _spritePatterns;
         private byte[] _spritePositions;
         private byte[] _spritePriorities;
         private byte[] _spriteIndices;
+        private byte[] _paletteData = new byte[32];
+
+        private byte _bufferedData;
 
         // $2000 PPUCTRL
         private byte _flagNameTable; // 0: $2000; 1: $2400; 2: $2800; 3: $2C00
@@ -60,6 +63,14 @@ namespace corenes
         private Cpu cpu;
         private byte _register;
         private byte _oamAddress;
+        public byte[] nameTableData = new byte[2048];
+
+        private byte _grayscale;
+        private byte _showLeftBackground;
+        private byte _showLeftSprites;
+        private byte _redTint;
+        private byte _greenTint;
+        private byte _blueTint;
 
         public Ppu(Emulator emulator)
         {
@@ -67,6 +78,45 @@ namespace corenes
             _memory = emulator.memory;
         }
 
+        public void Reset()
+        {
+            _cycle = 340;
+            _scanline = 240;
+            _frame = 0;
+            WriteControl(0);
+            WriteMask(0);
+            WriteOAMAddress(0);
+        }
+
+        private void WriteMask(byte value)
+        {
+            _grayscale = (byte) ((value >> 0) & 1);
+            _showLeftBackground = (byte) ((value >> 1) & 1);
+            _showLeftSprites = (byte) ((value >> 2) & 1);
+            _showBackground = (value >> 3) & 1;
+            _showSprites = (value >> 4) & 1;
+            _redTint = (byte) ((value >> 5) & 1);
+            _greenTint = (byte) ((value >> 6) & 1);
+            _blueTint = (byte) ((value >> 7) & 1);
+        }
+
+        private void WriteOAMAddress(byte value)
+        {
+            _oamAddress = value;
+        }
+
+        private void WriteControl(byte value)
+        {
+            _flagNameTable = (byte) ((value >> 0) & 3);
+            _flagIncrement = (byte) ((value >> 2) & 1);
+            _flagSpriteTable = (byte) ((value >> 3) & 1);
+            _flagBackgroundTable = (byte) ((value >> 4) & 1);
+            _flagSpriteSize = (byte) ((value >> 5) & 1);
+            _flagMasterSlave = (byte) ((value >> 6) & 1);
+            _nmiOutput = ((value >> 7) & 1) == 1;
+            NmiChange();
+            _t = (ushort) ((_t & 0xF3FF) | (value & 0x03) << 10);
+        }
 
         public void Step()
         {
@@ -153,10 +203,16 @@ namespace corenes
 
             if (preLine && _cycle == 1)
             {
-                SetVBlank();
+                ClearVBlank();
                 _spriteZeroHit = 0;
                 _spriteOverflow = 0;
             }
+        }
+
+        private void ClearVBlank()
+        {
+            _nmiOccurred = false;
+            NmiChange();
         }
 
         private void RenderPixel()
@@ -197,7 +253,7 @@ namespace corenes
             var table = _flagBackgroundTable;
             var tile = _nameTableByte;
             var address = 0x1000 * table + tile * 16 + fineY;
-            _lowTileByte = _memory.read((ushort) (address + 8));
+            _lowTileByte = _memory.Read((ushort) (address + 8));
             ;
         }
 
@@ -207,7 +263,7 @@ namespace corenes
             var table = _flagBackgroundTable;
             var tile = _nameTableByte;
             var address = 0x1000 * table + tile * 16 + fineY;
-            _lowTileByte = _memory.read((ushort) address);
+            _lowTileByte = _memory.Read((ushort) address);
         }
 
         private void FetchAttributeTable()
@@ -215,14 +271,14 @@ namespace corenes
             var v = _v;
             ushort address = (ushort) (0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07));
             var shift = ((v >> 4) & 4) | (v & 2);
-            _attributeTableByte = (byte) (((_memory.read(address) >> shift) & 3) << 2);
+            _attributeTableByte = (byte) (((_memory.Read(address) >> shift) & 3) << 2);
         }
 
         private void FetchNameTableByte()
         {
             var v = _v;
             ushort address = (ushort) (0x2000 | (v & 0x0FFF));
-            _nameTableByte = _memory.read(address);
+            _nameTableByte = _memory.Read(address);
         }
 
         private void EvaluateSprites()
@@ -245,7 +301,7 @@ namespace corenes
 
                 if (count < 8)
                 {
-                 //   _spritePatterns[count] = fetchSpritePattern(i, row);
+                    _spritePatterns[count] = FetchSpritePattern(i, row);
                     _spritePositions[count] = x;
                     _spritePriorities[count] = (byte) ((a >> 5) & 1);
                     _spriteIndices[count] = (byte) i;
@@ -258,6 +314,69 @@ namespace corenes
                 _spriteOverflow = 1;
             }
             _spriteCount = count;
+        }
+
+        private int FetchSpritePattern(int i, int row)
+        {
+            var tile = _oamData[i * 4 + 1];
+            var attributes = _oamData[i * 4 + 2];
+
+            ushort address;
+
+            if (_flagSpriteSize == 0) {
+                if ((attributes & 0x80) == 0x80)
+                {
+                    row = 7 - row;
+                }
+                var table = _flagSpriteTable;
+                address = (ushort) (0x1000 * table + tile * 16 + row);
+            }
+            else
+            {
+                if ((attributes & 0x80) == 0x80)
+                {
+                    row = 15 - row;
+
+                }
+                var table = tile & 1;
+                tile &= 0xFE;
+                if (row > 7)
+                {
+                    tile++;
+                    row -= 8;
+                }
+                address = (ushort) (0x1000 * table + tile * 16 + row);
+
+            }
+            var a = (attributes & 3) << 2;
+            var lowTileByte = _memory.ReadPpu(address);
+            var highTileByte = _memory.ReadPpu((ushort) (address + 8));
+
+            int data = 0;
+
+            for (int j = 0; j < 8; j++)
+            {
+                byte p1, p2;
+
+                if ((attributes & 0x40) == 0x40)
+                {
+                    p1 = (byte)((lowTileByte & 1) << 0);
+                    p2 = (byte)((highTileByte & 1) << 1);
+                    lowTileByte >>= 1;
+                    highTileByte >>= 1;
+                }
+                else
+                {
+                    p1 = (byte)((lowTileByte & 0x80) >> 7);
+                    p2 = (byte)((highTileByte & 0x80) >> 6);
+                    lowTileByte <<= 1;
+                    highTileByte <<= 1;
+                }
+                data <<= 4;
+                data |= a | p1 | p2;
+
+            }
+            return data;
         }
 
         private void SetVBlank()
@@ -388,6 +507,30 @@ namespace corenes
 
         private byte ReadData()
         {
+            var value = _memory.ReadPpu(_v);
+            // emulate buffered reads
+            if (_v % 0x4000 < 0x3F00)
+            {
+                var buffered = _bufferedData;
+                _bufferedData = value;
+                value = buffered;
+            }
+            else
+            {
+                _bufferedData = _memory.ReadPpu((ushort) (_v - 0x1000));
+
+            }
+            // increment address
+            if (_flagIncrement == 0)
+            {
+                _v += 1;
+            }
+            else
+            {
+                _v += 32;
+
+            }
+            return value;
         }
 
         private byte ReadOamData()
@@ -408,6 +551,123 @@ namespace corenes
             NmiChange();
             _w = 0;
             return result;
+        }
+
+        public byte ReadPalette(ushort address)
+        {
+            if (address >= 16 && address % 4 == 0)
+            {
+                address -= 16;
+            }
+            return _paletteData[address];
+        }
+
+        public void WritePalette(ushort address, byte value)
+        {
+            if (address >= 16 && address % 4 == 0)
+            {
+                address -= 16;
+            }
+            _paletteData[address] = value;
+        }
+
+        public void WriteRegister(ushort address, byte value)
+        {
+            _register = value;
+            switch (address)
+            {
+                case 0x2000:
+                WriteControl(value);
+                    break;
+                case 0x2001:
+                    WriteMask(value);
+                    break;
+                case 0x2003:
+                    WriteOAMAddress(value);
+                    break;
+                case 0x2004:
+                    WriteOAMData(value);
+                    break;
+                case 0x2005:
+                    WriteScroll(value);
+                    break;
+                case 0x2006:
+                    WriteAddress(value);
+                    break;
+                case 0x2007:
+                    WriteData(value);
+                    break;
+                case 0x4014:
+                    WriteDma(value);
+                    break;
+            }
+        }
+
+        private void WriteDma(byte value)
+        {
+            var address = value << 8;
+                for (int i = 0; i < 256; i++)
+                {
+                    _oamData[_oamAddress] = _memory.Read((ushort) address);
+                    _oamAddress++;
+                    address++;
+                }
+            _cpu._stall += 513;
+
+            if (_cpu._cycles % 2 == 1)
+            {
+                _cpu._stall++;
+            }
+        }
+
+        private void WriteData(byte value)
+        {
+            _memory.WritePPU(_v, value);
+            if (_flagIncrement == 0)
+            {
+                _v += 1;
+            }
+            else
+            {
+                _v += 32;
+            }
+        }
+
+        private void WriteAddress(byte value)
+        {
+            if (_w == 0)
+            {
+               _t = (ushort) ((_t & 0x80FF) | ((value & 0x3F) << 8));
+               _w = 1;
+            }
+            else
+            {
+                _t = (ushort) ((_t & 0xFF00) | value);
+                _v = _t;
+                _w = 0;
+            }
+        }
+
+        private void WriteScroll(byte value)
+        {
+            if (_w == 0)
+            {
+                _t = (ushort) ((_t & 0xFFE0) | (value >> 3));
+                _x = (byte) (value & 0x07);
+                _w = 1;
+            }
+            else
+            {
+                _t = (ushort) ((_t & 0x8FFF) | (value & 0x07) << 12);
+                _t = (ushort) ((_t & 0xFC1F) | (value & 0xF8) << 2);
+                _w = 0;
+            }
+        }
+
+        private void WriteOAMData(byte value)
+        {
+            _oamData[_oamAddress] = value;
+            _oamAddress++;
         }
     }
 }

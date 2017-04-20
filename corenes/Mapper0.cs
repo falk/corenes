@@ -18,6 +18,10 @@ namespace corenes
 
         public byte read(ushort address)
         {
+            if (address < 0x8000)
+            {
+                throw new Exception("Bad address");
+            }
 
             int offset;
             if (cartridge._prgrom16kb == 1 && address >= 0xC000)
@@ -30,7 +34,6 @@ namespace corenes
             }
 
             int add = address - offset;
-            // @todo Support upper bank
             return cartridge.PRG[add];
         }
 
