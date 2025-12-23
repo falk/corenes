@@ -693,6 +693,11 @@ namespace corenes
             }
         }
 
+        public ushort[] GetFrameBuffer()
+        {
+            return _imageFront;
+        }
+
         private void WriteDma(byte value)
         {
             var address = value << 8;
