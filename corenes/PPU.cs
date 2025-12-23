@@ -35,10 +35,10 @@ namespace corenes
         private int _spriteCount;
         private int _spriteSize;
         private byte[] _oamData = new byte[256];
-        private int[] _spritePatterns;
-        private byte[] _spritePositions;
-        private byte[] _spritePriorities;
-        private byte[] _spriteIndices;
+        private int[] _spritePatterns = new int[8];
+        private byte[] _spritePositions = new byte[8];
+        private byte[] _spritePriorities = new byte[8];
+        private byte[] _spriteIndices = new byte[8];
         private byte[] _paletteData = new byte[32];
 
         private byte _bufferedData;
@@ -217,7 +217,97 @@ namespace corenes
 
         private void RenderPixel()
         {
-            throw new NotImplementedException();
+            int x = _cycle - 1;
+            int y = _scanline;
+
+            byte background = 0;
+            if (_showBackground != 0)
+            {
+                background = FetchBackgroundPixel();
+            }
+
+            byte i = 0;
+            byte sprite = 0;
+            if (_showSprites != 0)
+            {
+                sprite = FetchSpritePixel(ref i);
+            }
+
+            // Determine which pixel to render based on priority
+            byte pixel;
+            if (x < 8 && _showLeftBackground == 0)
+            {
+                background = 0;
+            }
+            if (x < 8 && _showLeftSprites == 0)
+            {
+                sprite = 0;
+            }
+
+            bool b = (background % 4) != 0;
+            bool s = (sprite % 4) != 0;
+
+            if (!b && !s)
+            {
+                pixel = 0;
+            }
+            else if (!b && s)
+            {
+                pixel = (byte)(sprite | 0x10);
+            }
+            else if (b && !s)
+            {
+                pixel = background;
+            }
+            else
+            {
+                if (_spriteIndices[i] == 0 && x < 255)
+                {
+                    _spriteZeroHit = 1;
+                }
+                if (_spritePriorities[i] == 0)
+                {
+                    pixel = (byte)(sprite | 0x10);
+                }
+                else
+                {
+                    pixel = background;
+                }
+            }
+
+            _imageBack[y * 256 + x] = (ushort)(_memory.ReadPpu((ushort)(0x3F00 + pixel)) % 64);
+        }
+
+        private byte FetchBackgroundPixel()
+        {
+            int data = _tileData >> ((_x + (7 - (_cycle - 1) % 8)) * 4);
+            return (byte)(data & 0x0F);
+        }
+
+        private byte FetchSpritePixel(ref byte index)
+        {
+            if (_showSprites == 0)
+            {
+                return 0;
+            }
+
+            for (int i = 0; i < _spriteCount; i++)
+            {
+                int offset = (_cycle - 1) - _spritePositions[i];
+                if (offset < 0 || offset > 7)
+                {
+                    continue;
+                }
+                offset = 7 - offset;
+                byte color = (byte)((_spritePatterns[i] >> (offset * 4)) & 0x0F);
+                if ((color % 4) == 0)
+                {
+                    continue;
+                }
+                index = (byte)i;
+                return color;
+            }
+            return 0;
         }
 
         private void CopyX()
@@ -253,8 +343,7 @@ namespace corenes
             var table = _flagBackgroundTable;
             var tile = _nameTableByte;
             var address = 0x1000 * table + tile * 16 + fineY;
-            _lowTileByte = _memory.Read((ushort) (address + 8));
-            ;
+            _highTileByte = _memory.Read((ushort) (address + 8));
         }
 
         private void FetchLowTileByte()
@@ -381,8 +470,9 @@ namespace corenes
 
         private void SetVBlank()
         {
+            var temp = _imageFront;
             _imageFront = _imageBack;
-            _imageBack = _imageFront;
+            _imageBack = temp;
             _nmiOccurred = true;
             NmiChange();
         }

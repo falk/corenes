@@ -18,6 +18,13 @@ namespace corenes
 
         public byte read(ushort address)
         {
+            // CHR ROM read (for PPU pattern tables)
+            if (address < 0x2000)
+            {
+                return cartridge.CHR[address];
+            }
+
+            // PRG ROM read (for CPU)
             if (address < 0x8000)
             {
                 throw new Exception("Bad address");

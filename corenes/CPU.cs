@@ -260,7 +260,7 @@ namespace corenes
             setZN(_a);
 
             // Carry?
-            if (a + b + + c >= 0xFF)
+            if (a + b + c > 0xFF)
             {
                 _c = 1;
             }
@@ -298,7 +298,7 @@ namespace corenes
             setZN(_a);
 
             // cast to int?
-            if ((a - b - 1 - c) >= 0)
+            if ((a - b - (1 - c)) >= 0)
             {
                 _c = 1;
             }
@@ -347,7 +347,7 @@ namespace corenes
                 var c = _c;
                 byte value = Memory.Read(parms.address);
                 _c = (byte)((value >> 7) & 1);
-                _a = (byte)(value << 1 | c);
+                value = (byte)(value << 1 | c);
                 Memory.Write(parms.address, value);
                 setZN(value);
             }
@@ -360,15 +360,15 @@ namespace corenes
             {
                 var c = _c;
                 _c = (byte) (_a & 1);
-                _a = (byte) (_a >> 1 | c);
+                _a = (byte) (_a >> 1 | (c << 7));
                 setZN(_a);
             }
             else
             {
                 var c = _c;
                 byte value = Memory.Read(parms.address);
-                _c = (byte) ((value >> 7) & 1);
-                _a = (byte) (value << 1 | c);
+                _c = (byte) (value & 1);
+                value = (byte) (value >> 1 | (c << 7));
                 Memory.Write(parms.address, value);
                 setZN(value);
             }
@@ -469,11 +469,11 @@ namespace corenes
         }
 
         // Pop 2 bytes from stack
-        private byte Pull16()
+        private ushort Pull16()
         {
             byte low = Pull();
             byte high = Pull();
-            return (byte) (high << 8 | low);
+            return (ushort) (high << 8 | low);
         }
 
         // Pop from stack
