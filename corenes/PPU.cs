@@ -280,7 +280,11 @@ namespace corenes
 
         private byte FetchBackgroundPixel()
         {
-            int data = _tileData >> ((_x + (7 - (_cycle - 1) % 8)) * 4);
+            // Calculate which pixel within the 2-tile buffer we're rendering
+            // _tileData holds 8 pixels (32 bits / 4 bits per pixel)
+            // Fine X scroll offsets the starting position
+            int shift = 28 - ((((_cycle - 1) + _x) % 8) * 4);
+            int data = _tileData >> shift;
             return (byte)(data & 0x0F);
         }
 
@@ -343,7 +347,7 @@ namespace corenes
             var table = _flagBackgroundTable;
             var tile = _nameTableByte;
             var address = 0x1000 * table + tile * 16 + fineY;
-            _highTileByte = _memory.Read((ushort) (address + 8));
+            _highTileByte = _memory.ReadPpu((ushort) (address + 8));
         }
 
         private void FetchLowTileByte()
@@ -352,7 +356,7 @@ namespace corenes
             var table = _flagBackgroundTable;
             var tile = _nameTableByte;
             var address = 0x1000 * table + tile * 16 + fineY;
-            _lowTileByte = _memory.Read((ushort) address);
+            _lowTileByte = _memory.ReadPpu((ushort) address);
         }
 
         private void FetchAttributeTable()
@@ -360,14 +364,14 @@ namespace corenes
             var v = _v;
             ushort address = (ushort) (0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07));
             var shift = ((v >> 4) & 4) | (v & 2);
-            _attributeTableByte = (byte) (((_memory.Read(address) >> shift) & 3) << 2);
+            _attributeTableByte = (byte) (((_memory.ReadPpu(address) >> shift) & 3) << 2);
         }
 
         private void FetchNameTableByte()
         {
             var v = _v;
             ushort address = (ushort) (0x2000 | (v & 0x0FFF));
-            _nameTableByte = _memory.Read(address);
+            _nameTableByte = _memory.ReadPpu(address);
         }
 
         private void EvaluateSprites()
@@ -612,11 +616,11 @@ namespace corenes
             // increment address
             if (_flagIncrement == 0)
             {
-                _v += 1;
+                _v = (ushort)((_v + 1) & 0x7FFF);
             }
             else
             {
-                _v += 32;
+                _v = (ushort)((_v + 32) & 0x7FFF);
 
             }
             return value;
@@ -720,11 +724,11 @@ namespace corenes
             _memory.WritePPU(_v, value);
             if (_flagIncrement == 0)
             {
-                _v += 1;
+                _v = (ushort)((_v + 1) & 0x7FFF);
             }
             else
             {
-                _v += 32;
+                _v = (ushort)((_v + 32) & 0x7FFF);
             }
         }
 
@@ -762,7 +766,7 @@ namespace corenes
         private void WriteOAMData(byte value)
         {
             _oamData[_oamAddress] = value;
-            _oamAddress++;
+            _oamAddress = (byte)((_oamAddress + 1) & 0xFF);
         }
     }
 }

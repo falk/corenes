@@ -374,7 +374,7 @@ namespace corenes
         }
 
         // PHA - Push Accumulator
-            private void PHA(StepParameters parms)
+        private void PHA(StepParameters parms)
         {
             push(_a);
         }
@@ -384,6 +384,18 @@ namespace corenes
         {
             _a = Pull();
             setZN(_a);
+        }
+
+        // PHP - Push Processor Status
+        private void PHP(StepParameters parms)
+        {
+            push((byte) (GetFlags() | 0x10));
+        }
+
+        // PLP - Pull Processor Status
+        private void PLP(StepParameters parms)
+        {
+            SetFlags((byte)(Pull() & 0xEF | 0x20));
         }
 
 
@@ -597,6 +609,26 @@ namespace corenes
             }
         }
 
+        // BVC - Branch if Overflow Clear
+        private void BVC(StepParameters parms)
+        {
+            if (_v == 0)
+            {
+                _pc = parms.address;
+                addBranchCycles(parms);
+            }
+        }
+
+        // BVS - Branch if Overflow Set
+        private void BVS(StepParameters parms)
+        {
+            if (_v != 0)
+            {
+                _pc = parms.address;
+                addBranchCycles(parms);
+            }
+        }
+
         // addBranchCycles adds a cycle for taking a branch and adds another cycle
         // if the branch jumps to a new page
         private void addBranchCycles(StepParameters parms)
@@ -692,6 +724,20 @@ namespace corenes
             _sp = _x;
         }
 
+        // TSX - Transfer Stack Pointer to X
+        private void TSX(StepParameters parms)
+        {
+            _x = _sp;
+            setZN(_x);
+        }
+
+        // TYA - Transfer Y to Accumulator
+        private void TYA(StepParameters parms)
+        {
+            _a = _y;
+            setZN(_a);
+        }
+
         // setZ sets the zero flag if the argument is zero
         private void setZ(byte value)
         {
@@ -783,9 +829,21 @@ namespace corenes
             _i = 1;
         }
 
+        // CLI - Clear Interrupt Disable
+        private void CLI(StepParameters parms)
+        {
+            _i = 0;
+        }
+
+        // CLV - Clear Overflow Flag
+        private void CLV(StepParameters parms)
+        {
+            _v = 0;
+        }
+
         private void NOP(StepParameters parms)
         {
-            
+
         }
 
         private readonly byte[] _adressingMode =
