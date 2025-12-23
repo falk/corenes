@@ -36,7 +36,8 @@ namespace corenes
         // Program Counter (PC)
         private ushort _pc;
 
-        public int _cycles;
+        private int _cycles;
+        public int Cycles => _cycles;
 
         private StepParameters _stepParameters;
 
@@ -148,7 +149,7 @@ namespace corenes
                     break;
                 // Indexed indirect
                 case 7:
-                    address = Read16Bug((ushort) (Memory.Read((ushort) (_pc + 1)) + _x));
+                    address = Read16Bug((ushort)((Memory.Read((ushort) (_pc + 1)) + _x) & 0xFF));
                     break;
                 // Indirect
                 case 8:
@@ -177,11 +178,11 @@ namespace corenes
                     break;
                 // Zero page X
                 case 12:
-                    address = (ushort) (Memory.Read((ushort) (_pc + 1)) + _x);
+                    address = (ushort)((Memory.Read((ushort) (_pc + 1)) + _x) & 0xFF);
                     break;
                 // Zero page Y
                 case 13:
-                    address = (ushort) (Memory.Read((ushort) (_pc + 1)) + _y);
+                    address = (ushort)((Memory.Read((ushort) (_pc + 1)) + _y) & 0xFF);
                     break;
             }
 
@@ -623,7 +624,7 @@ namespace corenes
 
         private ushort Read16Bug(ushort address)
         {
-            ushort b = (ushort)((address & 0xFF00) | (address + 1));
+            ushort b = (ushort)((address & 0xFF00) | ((address + 1) & 0xFF));
             var low = Memory.Read(address);
             var high = Memory.Read(b);
             return (ushort)(high << 8 | low);

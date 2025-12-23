@@ -482,9 +482,8 @@ namespace corenes
             var nmi = _nmiOutput && _nmiOccurred;
             if (nmi && !_nmiPrevious)
             {
-                // TODO: this fixes some games but the delay shouldn't have to be so
-                // long, so the timings are off somewhere
-                _nmiDelay = 15;
+                // NMI should trigger 2 PPU cycles after VBlank is set
+                _nmiDelay = 2;
             }
             _nmiPrevious = nmi;
         }
@@ -701,15 +700,16 @@ namespace corenes
         private void WriteDma(byte value)
         {
             var address = value << 8;
-                for (int i = 0; i < 256; i++)
-                {
-                    _oamData[_oamAddress] = _memory.Read((ushort) address);
-                    _oamAddress++;
-                    address++;
-                }
-            _cpu._stall += 513;
+            for (int i = 0; i < 256; i++)
+            {
+                _oamData[_oamAddress] = _memory.Read((ushort) address);
+                _oamAddress = (byte)((_oamAddress + 1) & 0xFF);
+                address++;
+            }
 
-            if (_cpu._cycles % 2 == 1)
+            // DMA takes 513 cycles (256*2 + 1), plus 1 extra if on odd cycle
+            _cpu._stall += 513;
+            if (_cpu.Cycles % 2 == 1)
             {
                 _cpu._stall++;
             }
