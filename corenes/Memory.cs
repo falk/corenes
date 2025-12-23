@@ -33,7 +33,7 @@ namespace corenes
             }
             if (address == 0x4015)
             {
-                // read apu (audio)
+                return emulator.apu.ReadStatus();
             }
             if (address == 0x4016)
             {
@@ -97,18 +97,27 @@ namespace corenes
             {
                 emulator.ppu.WriteRegister(address, value);
             }
+            else if (address >= 0x4000 && address <= 0x4013)
+            {
+                emulator.apu.WriteRegister(address, value);
+            }
             else if (address == 0x4015)
             {
-                // read apu (picture)
+                emulator.apu.WriteRegister(address, value);
             }
             else if (address == 0x4016)
             {
-                // read controller 1
-            } else if (address >= 0x6000)
+                // write controller 1
+            }
+            else if (address == 0x4017)
+            {
+                emulator.apu.WriteRegister(address, value);
+            }
+            else if (address >= 0x6000)
             {
                 this.mapper.write(address, value);
             }
-           
+
         }
 
         private ushort MirrorAddress(MirrorMode mode, ushort address)

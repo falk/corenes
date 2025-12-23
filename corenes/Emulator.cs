@@ -9,10 +9,12 @@ namespace corenes
         public Memory memory;
         public Cpu cpu;
         public Ppu ppu;
+        public Apu apu;
 
         private unsafe SDL_Window* window;
         private unsafe SDL_Renderer* renderer;
         private unsafe SDL_Texture* texture;
+        private unsafe SDL_AudioStream* audioStream;
 
         private const int NES_WIDTH = 256;
         private const int NES_HEIGHT = 240;
@@ -21,7 +23,7 @@ namespace corenes
         public unsafe Emulator()
         {
             // Initialize SDL
-            if (!SDL3.SDL_Init(SDL_InitFlags.SDL_INIT_VIDEO))
+            if (!SDL3.SDL_Init(SDL_InitFlags.SDL_INIT_VIDEO | SDL_InitFlags.SDL_INIT_AUDIO))
             {
                 throw new Exception($"SDL_Init failed: {SDL3.SDL_GetError()}");
             }
@@ -60,14 +62,45 @@ namespace corenes
                 throw new Exception($"SDL_CreateTexture failed: {SDL3.SDL_GetError()}");
             }
 
+            // Create audio stream
+            SDL_AudioSpec srcSpec = new SDL_AudioSpec
+            {
+                freq = 44100,
+                format = SDL_AudioFormat.SDL_AUDIO_F32,
+                channels = 1
+            };
+
+            SDL_AudioSpec dstSpec = new SDL_AudioSpec
+            {
+                freq = 44100,
+                format = SDL_AudioFormat.SDL_AUDIO_F32,
+                channels = 1
+            };
+
+            audioStream = SDL3.SDL_OpenAudioDeviceStream(
+                SDL3.SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
+                &srcSpec,
+                null,
+                null
+            );
+
+            if (audioStream == null)
+            {
+                throw new Exception($"SDL_OpenAudioDeviceStream failed: {SDL3.SDL_GetError()}");
+            }
+
+            SDL3.SDL_ResumeAudioStreamDevice(audioStream);
+
             // Initialize emulator components
             this.cartridge = new Cartridge();
             this.memory = new Memory(this, new Mapper0(this.cartridge));
             this.cpu = new Cpu(this);
             this.ppu = new Ppu(this);
+            this.apu = new Apu(this.cpu);
 
             cpu.Reset();
             ppu.Reset();
+            apu.Reset();
 
             // Run emulation loop
             Run();
@@ -107,8 +140,17 @@ namespace corenes
                     ppu.Step();
                 }
 
+                // APU runs once per CPU cycle
+                for (int i = 0; i < cpuCycles; i++)
+                {
+                    apu.Step();
+                }
+
                 // Render frame (PPU will signal when a frame is complete)
                 RenderFrame();
+
+                // Output audio samples
+                OutputAudio();
             }
 
             Cleanup();
@@ -166,8 +208,25 @@ namespace corenes
             return nesPalette[paletteIndex % 64];
         }
 
+        private unsafe void OutputAudio()
+        {
+            float[] samples = apu.GetSamples();
+            if (samples.Length > 0)
+            {
+                fixed (float* samplePtr = samples)
+                {
+                    SDL3.SDL_PutAudioStreamData(audioStream, samplePtr, samples.Length * sizeof(float));
+                }
+            }
+        }
+
         private unsafe void Cleanup()
         {
+            if (audioStream != null)
+            {
+                SDL3.SDL_DestroyAudioStream(audioStream);
+            }
+
             if (texture != null)
             {
                 SDL3.SDL_DestroyTexture(texture);
