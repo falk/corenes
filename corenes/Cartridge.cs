@@ -21,7 +21,36 @@ namespace corenes
 
         public Cartridge()
         {
-            var path = "C:\\mario.NES";
+            // Try to find mario.NES in multiple locations (cross-platform)
+            string[] possiblePaths = new[]
+            {
+                "mario.NES",                                    // Current directory
+                Path.Combine(Directory.GetCurrentDirectory(), "mario.NES"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "mario.NES"),
+                "/Users/Shared/mario.NES",                     // macOS common location
+                "C:\\mario.NES"                                 // Windows location
+            };
+
+            string path = null;
+            foreach (var possiblePath in possiblePaths)
+            {
+                if (File.Exists(possiblePath))
+                {
+                    path = possiblePath;
+                    break;
+                }
+            }
+
+            if (path == null)
+            {
+                throw new FileNotFoundException(
+                    "Could not find mario.NES. Please place the ROM file in one of these locations:\n" +
+                    "  - Current directory\n" +
+                    "  - Your home directory\n" +
+                    "  - /Users/Shared/ (macOS)\n" +
+                    "  - C:\\ (Windows)");
+            }
+
             byte[] rom = File.ReadAllBytes(path);
             byte[] header = new ArraySegment<byte>(rom, 0, 16).ToArray();
 

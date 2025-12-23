@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Reflection;
-using System.Security.Cryptography;
-using System.Threading;
 
 namespace corenes
 {
