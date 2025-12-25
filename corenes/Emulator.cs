@@ -1,8 +1,17 @@
 ﻿using System;
+using System.IO;
 using SDL;
+using NfdSharp;
 
 namespace corenes
 {
+    internal enum EmulatorState
+    {
+        Running,
+        Paused,
+        Menu
+    }
+
     internal class Emulator
     {
         public Cartridge cartridge;
@@ -20,6 +29,9 @@ namespace corenes
         private const int NES_HEIGHT = 240;
         private const int SCALE = 3;
 
+        private EmulatorState _state = EmulatorState.Running;
+        private string _currentRomPath;
+
         // Cached NES palette (RGB565 format) - prevents allocation on every pixel conversion
         private static readonly ushort[] NES_PALETTE_RGB565 = new ushort[64]
         {
@@ -33,7 +45,7 @@ namespace corenes
             0xC6A0, 0x8F40, 0x6FCC, 0x5FED, 0x6FF7, 0x9CD6, 0x0000, 0x0000
         };
 
-        public unsafe Emulator()
+        public unsafe Emulator(string romPath = null)
         {
             // Initialize SDL
             if (!SDL3.SDL_Init(SDL_InitFlags.SDL_INIT_VIDEO | SDL_InitFlags.SDL_INIT_AUDIO))
@@ -105,7 +117,8 @@ namespace corenes
             SDL3.SDL_ResumeAudioStreamDevice(audioStream);
 
             // Initialize emulator components
-            this.cartridge = new Cartridge();
+            _currentRomPath = romPath;
+            this.cartridge = new Cartridge(romPath);
             this.memory = new Memory(this, new Mapper0(this.cartridge));
             this.cpu = new Cpu(this);
             this.ppu = new Ppu(this);
@@ -114,6 +127,13 @@ namespace corenes
             cpu.Reset();
             ppu.Reset();
             apu.Reset();
+
+            Console.WriteLine("CoreNES - NES Emulator");
+            Console.WriteLine("Press ESC or F1 to open menu");
+            if (!string.IsNullOrEmpty(_currentRomPath))
+            {
+                Console.WriteLine($"Loaded ROM: {_currentRomPath}");
+            }
 
             // Run emulation loop
             Run();
@@ -136,37 +156,46 @@ namespace corenes
                     }
                     else if (evt.type == SDL_EventType.SDL_EVENT_KEY_DOWN)
                     {
-                        if (evt.key.key == SDL_Keycode.SDLK_ESCAPE)
-                        {
-                            running = false;
-                        }
+                        HandleKeyPress(evt.key.key, ref running);
                     }
                 }
 
-                // Run one CPU instruction
-                cpuCycles = this.cpu.Step();
-
-                // PPU runs 3 times per CPU cycle
-                ppuCycles = cpuCycles * 3;
-                for (int i = 0; i < ppuCycles; i++)
+                // Only run emulation if not paused
+                if (_state == EmulatorState.Running)
                 {
-                    ppu.Step();
+                    // Run one CPU instruction
+                    cpuCycles = this.cpu.Step();
+
+                    // PPU runs 3 times per CPU cycle
+                    ppuCycles = cpuCycles * 3;
+                    for (int i = 0; i < ppuCycles; i++)
+                    {
+                        ppu.Step();
+                    }
+
+                    // APU runs once per CPU cycle
+                    for (int i = 0; i < cpuCycles; i++)
+                    {
+                        apu.Step();
+                    }
+
+                    // Render frame only when PPU signals a frame is complete (60 FPS)
+                    if (ppu.IsFrameReady())
+                    {
+                        RenderFrame();
+                        ppu.ClearFrameReady();
+
+                        // Output audio samples when we render a frame
+                        OutputAudio();
+                    }
                 }
-
-                // APU runs once per CPU cycle
-                for (int i = 0; i < cpuCycles; i++)
+                else if (_state == EmulatorState.Menu)
                 {
-                    apu.Step();
-                }
-
-                // Render frame only when PPU signals a frame is complete (60 FPS)
-                if (ppu.IsFrameReady())
-                {
+                    // Render last frame with menu overlay
                     RenderFrame();
-                    ppu.ClearFrameReady();
-
-                    // Output audio samples when we render a frame
-                    OutputAudio();
+                    RenderMenu();
+                    SDL3.SDL_RenderPresent(renderer);
+                    SDL3.SDL_Delay(16); // ~60 FPS when paused
                 }
             }
 
@@ -204,6 +233,114 @@ namespace corenes
 
             // Present
             SDL3.SDL_RenderPresent(renderer);
+        }
+
+        private void HandleKeyPress(SDL_Keycode key, ref bool running)
+        {
+            if (_state == EmulatorState.Running)
+            {
+                switch (key)
+                {
+                    case SDL_Keycode.SDLK_ESCAPE:
+                        _state = EmulatorState.Menu;
+                        break;
+                    case SDL_Keycode.SDLK_F1:
+                        _state = EmulatorState.Menu;
+                        break;
+                }
+            }
+            else if (_state == EmulatorState.Menu)
+            {
+                switch (key)
+                {
+                    case SDL_Keycode.SDLK_ESCAPE:
+                    case SDL_Keycode.SDLK_r:
+                        _state = EmulatorState.Running;
+                        break;
+                    case SDL_Keycode.SDLK_o:
+                        LoadRomFromDialog();
+                        break;
+                    case SDL_Keycode.SDLK_q:
+                        running = false;
+                        break;
+                }
+            }
+        }
+
+        private void LoadRomFromDialog()
+        {
+            try
+            {
+                var result = Nfd.FileOpen("nes");
+                if (result.Status == NfdStatus.Ok && !string.IsNullOrEmpty(result.Path))
+                {
+                    // Store current ROM path
+                    _currentRomPath = result.Path;
+
+                    // Reload cartridge with new ROM
+                    cartridge = new Cartridge(_currentRomPath);
+                    memory = new Memory(this, new Mapper0(cartridge));
+                    cpu.Reset();
+                    ppu.Reset();
+                    apu.Reset();
+
+                    // Resume emulation
+                    _state = EmulatorState.Running;
+
+                    Console.WriteLine($"Loaded ROM: {_currentRomPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error loading ROM: {ex.Message}");
+            }
+        }
+
+        private unsafe void RenderMenu()
+        {
+            // Draw semi-transparent overlay
+            SDL3.SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_BLEND);
+            SDL3.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 180);
+            SDL3.SDL_FRect overlayRect = new SDL_FRect { x = 0, y = 0, w = NES_WIDTH * SCALE, h = NES_HEIGHT * SCALE };
+            SDL3.SDL_RenderFillRect(renderer, &overlayRect);
+
+            // Draw menu title
+            DrawText("=== MENU ===", 280, 200, 2.0f);
+            DrawText("R - Resume", 260, 280, 1.5f);
+            DrawText("O - Load ROM", 260, 320, 1.5f);
+            DrawText("Q - Quit", 260, 360, 1.5f);
+
+            if (!string.IsNullOrEmpty(_currentRomPath))
+            {
+                string romName = Path.GetFileName(_currentRomPath);
+                DrawText($"Current: {romName}", 200, 450, 1.0f);
+            }
+        }
+
+        private unsafe void DrawText(string text, int x, int y, float scale)
+        {
+            // Simple box-based text rendering (each character is a 6x8 box)
+            int charWidth = (int)(6 * scale);
+            int charHeight = (int)(8 * scale);
+            int spacing = (int)(2 * scale);
+
+            for (int i = 0; i < text.Length; i++)
+            {
+                SDL_FRect charRect = new SDL_FRect
+                {
+                    x = x + i * (charWidth + spacing),
+                    y = y,
+                    w = charWidth,
+                    h = charHeight
+                };
+
+                SDL3.SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+                SDL3.SDL_RenderFillRect(renderer, &charRect);
+
+                // Draw character outline
+                SDL3.SDL_SetRenderDrawColor(renderer, 100, 100, 255, 255);
+                SDL3.SDL_RenderRect(renderer, &charRect);
+            }
         }
 
         private unsafe void OutputAudio()

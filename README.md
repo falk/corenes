@@ -9,11 +9,14 @@ A cross-platform NES (Nintendo Entertainment System) emulator written in C# with
 - **Complete emulation**: CPU, PPU, and APU fully implemented
 - **Full audio**: All 5 NES audio channels with accurate mixing
 - **Bug-free**: All major emulation bugs fixed for Super Mario Bros compatibility
+- **User-friendly menu**: In-game menu with file browser for loading ROMs
+- **Performance optimized**: Frame-based rendering at 60 FPS with minimal CPU usage
 
 ## Requirements
 
 - .NET 10 SDK
 - SDL3 libraries (automatically downloaded via NuGet package)
+- NativeFileDialogExtendedSharp (automatically downloaded via NuGet package)
 
 ## Building
 
@@ -24,21 +27,41 @@ dotnet build
 
 ## Running
 
-1. Place your Super Mario Bros ROM file (`mario.NES`) in one of these locations:
-   - Current directory
-   - Your home directory
-   - `/Users/Shared/` (macOS)
-   - `C:\` (Windows)
+### Option 1: With default ROM
 
-2. Run the emulator:
+Place your Super Mario Bros ROM file (`mario.NES`) in one of these locations:
+- Current directory
+- Your home directory
+- `/Users/Shared/` (macOS)
+- `C:\` (Windows)
+
+Then run:
 ```bash
 dotnet run
 ```
 
+### Option 2: With specific ROM file
+
+```bash
+dotnet run path/to/your/rom.nes
+```
+
+### Option 3: Load ROM via menu
+
+1. Run without arguments: `dotnet run`
+2. Press **ESC** or **F1** to open the menu
+3. Press **O** to open file dialog and select ROM
+
 ## Controls
 
-- **ESC**: Exit emulator
+### During Emulation
+- **ESC** or **F1**: Open menu
 - Window close button: Exit emulator
+
+### In Menu
+- **R** or **ESC**: Resume emulation
+- **O**: Open file dialog to load new ROM
+- **Q**: Quit emulator
 
 ## ROM Format
 
@@ -95,6 +118,7 @@ All 10 critical bugs preventing Super Mario Bros from working have been fixed:
 - **Language**: C# 10
 - **Framework**: .NET 10.0
 - **Graphics & Audio**: SDL3-CS (ppy.SDL3-CS package)
+- **File Dialogs**: NativeFileDialogExtendedSharp
 - **Target Platforms**: Windows, macOS, Linux
 
 ## Project Structure

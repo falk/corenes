@@ -19,38 +19,51 @@ namespace corenes
 
         public MirrorMode Mirroring{ get; set; }
 
-        public Cartridge()
+        public Cartridge() : this(null)
         {
-            // Try to find mario.NES in multiple locations (cross-platform)
-            string[] possiblePaths = new[]
-            {
-                "mario.NES",                                    // Current directory
-                Path.Combine(Directory.GetCurrentDirectory(), "mario.NES"),
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "mario.NES"),
-                "/Users/Shared/mario.NES",                     // macOS common location
-                "C:\\mario.NES"                                 // Windows location
-            };
+        }
 
-            string path = null;
-            foreach (var possiblePath in possiblePaths)
+        public Cartridge(string romPath)
+        {
+            string path = romPath;
+
+            // If no path provided, try to find mario.NES in multiple locations (cross-platform)
+            if (string.IsNullOrEmpty(path))
             {
-                if (File.Exists(possiblePath))
+                string[] possiblePaths = new[]
                 {
-                    path = possiblePath;
-                    break;
+                    "mario.NES",                                    // Current directory
+                    Path.Combine(Directory.GetCurrentDirectory(), "mario.NES"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "mario.NES"),
+                    "/Users/Shared/mario.NES",                     // macOS common location
+                    "C:\\mario.NES"                                 // Windows location
+                };
+
+                foreach (var possiblePath in possiblePaths)
+                {
+                    if (File.Exists(possiblePath))
+                    {
+                        path = possiblePath;
+                        break;
+                    }
                 }
             }
 
-            if (path == null)
+            if (path == null || !File.Exists(path))
             {
                 throw new FileNotFoundException(
-                    "Could not find mario.NES. Please place the ROM file in one of these locations:\n" +
+                    "Could not find ROM file. Please place mario.NES in one of these locations or use the menu to load a ROM:\n" +
                     "  - Current directory\n" +
                     "  - Your home directory\n" +
                     "  - /Users/Shared/ (macOS)\n" +
                     "  - C:\\ (Windows)");
             }
 
+            LoadRom(path);
+        }
+
+        private void LoadRom(string path)
+        {
             byte[] rom = File.ReadAllBytes(path);
             byte[] header = new ArraySegment<byte>(rom, 0, 16).ToArray();
 
