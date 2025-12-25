@@ -27,8 +27,8 @@ namespace corenes
         // Cycle counter
         private ulong _cycle;
 
-        // Audio buffer
-        private float[] _sampleBuffer = new float[4096];
+        // Audio buffer - 8192 samples for better performance (reduces SDL overhead)
+        private float[] _sampleBuffer = new float[8192];
         private int _sampleIndex;
 
         // Sample rate

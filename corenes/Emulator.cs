@@ -20,6 +20,19 @@ namespace corenes
         private const int NES_HEIGHT = 240;
         private const int SCALE = 3;
 
+        // Cached NES palette (RGB565 format) - prevents allocation on every pixel conversion
+        private static readonly ushort[] NES_PALETTE_RGB565 = new ushort[64]
+        {
+            0x7BEF, 0x001F, 0x0017, 0x4017, 0x7817, 0x7810, 0x7000, 0x3800,
+            0x0100, 0x0080, 0x0060, 0x0041, 0x0843, 0x0000, 0x0000, 0x0000,
+            0xBDF7, 0x039F, 0x181F, 0x801F, 0xB81B, 0xE015, 0xE00C, 0xA800,
+            0x4A00, 0x0300, 0x0140, 0x01C2, 0x0247, 0x0000, 0x0000, 0x0000,
+            0xFFFF, 0x3DFF, 0x5C9F, 0xBC1F, 0xFC1F, 0xFC18, 0xFBC0, 0xCBC0,
+            0x7D40, 0x1E80, 0x0768, 0x0749, 0x076D, 0x4210, 0x0000, 0x0000,
+            0xFFFF, 0xAF7F, 0xB65F, 0xE65F, 0xFE5F, 0xFE5C, 0xFE38, 0xF670,
+            0xC6A0, 0x8F40, 0x6FCC, 0x5FED, 0x6FF7, 0x9CD6, 0x0000, 0x0000
+        };
+
         public unsafe Emulator()
         {
             // Initialize SDL
@@ -146,11 +159,15 @@ namespace corenes
                     apu.Step();
                 }
 
-                // Render frame (PPU will signal when a frame is complete)
-                RenderFrame();
+                // Render frame only when PPU signals a frame is complete (60 FPS)
+                if (ppu.IsFrameReady())
+                {
+                    RenderFrame();
+                    ppu.ClearFrameReady();
 
-                // Output audio samples
-                OutputAudio();
+                    // Output audio samples when we render a frame
+                    OutputAudio();
+                }
             }
 
             Cleanup();
@@ -167,12 +184,12 @@ namespace corenes
 
             if (SDL3.SDL_LockTexture(texture, null, &pixels, &pitch))
             {
-                // Copy frame buffer to texture
-                ushort* pixelPtr = (ushort*)pixels;
-                for (int i = 0; i < NES_WIDTH * NES_HEIGHT; i++)
+                // Convert palette indices to RGB565 using Span for better performance
+                Span<ushort> pixelSpan = new Span<ushort>(pixels, NES_WIDTH * NES_HEIGHT);
+                for (int i = 0; i < pixelSpan.Length; i++)
                 {
-                    // Convert NES palette index to RGB565
-                    pixelPtr[i] = ConvertPaletteToRGB565(frameBuffer[i]);
+                    // Direct lookup from cached palette (no allocations)
+                    pixelSpan[i] = NES_PALETTE_RGB565[frameBuffer[i] & 0x3F];
                 }
 
                 SDL3.SDL_UnlockTexture(texture);
@@ -187,25 +204,6 @@ namespace corenes
 
             // Present
             SDL3.SDL_RenderPresent(renderer);
-        }
-
-        private ushort ConvertPaletteToRGB565(ushort paletteIndex)
-        {
-            // NES palette colors (simplified RGB565 conversion)
-            // This is a basic palette - you may want to use a more accurate NES palette
-            ushort[] nesPalette = new ushort[64]
-            {
-                0x7BEF, 0x001F, 0x0017, 0x4017, 0x7817, 0x7810, 0x7000, 0x3800,
-                0x0100, 0x0080, 0x0060, 0x0041, 0x0843, 0x0000, 0x0000, 0x0000,
-                0xBDF7, 0x039F, 0x181F, 0x801F, 0xB81B, 0xE015, 0xE00C, 0xA800,
-                0x4A00, 0x0300, 0x0140, 0x01C2, 0x0247, 0x0000, 0x0000, 0x0000,
-                0xFFFF, 0x3DFF, 0x5C9F, 0xBC1F, 0xFC1F, 0xFC18, 0xFBC0, 0xCBC0,
-                0x7D40, 0x1E80, 0x0768, 0x0749, 0x076D, 0x4210, 0x0000, 0x0000,
-                0xFFFF, 0xAF7F, 0xB65F, 0xE65F, 0xFE5F, 0xFE5C, 0xFE38, 0xF670,
-                0xC6A0, 0x8F40, 0x6FCC, 0x5FED, 0x6FF7, 0x9CD6, 0x0000, 0x0000
-            };
-
-            return nesPalette[paletteIndex % 64];
         }
 
         private unsafe void OutputAudio()

@@ -72,6 +72,9 @@ namespace corenes
         private byte _greenTint;
         private byte _blueTint;
 
+        // Frame ready flag for performance optimization
+        private bool _frameReady;
+
         public Ppu(Emulator emulator)
         {
             _cpu = emulator.cpu;
@@ -478,6 +481,7 @@ namespace corenes
             _imageFront = _imageBack;
             _imageBack = temp;
             _nmiOccurred = true;
+            _frameReady = true;
             NmiChange();
         }
 
@@ -699,6 +703,16 @@ namespace corenes
         public ushort[] GetFrameBuffer()
         {
             return _imageFront;
+        }
+
+        public bool IsFrameReady()
+        {
+            return _frameReady;
+        }
+
+        public void ClearFrameReady()
+        {
+            _frameReady = false;
         }
 
         private void WriteDma(byte value)
