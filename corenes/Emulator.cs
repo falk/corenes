@@ -5,13 +5,6 @@ using NfdSharp;
 
 namespace corenes
 {
-    internal enum EmulatorState
-    {
-        Running,
-        Paused,
-        Menu
-    }
-
     internal class Emulator
     {
         public Cartridge cartridge;
@@ -29,7 +22,6 @@ namespace corenes
         private const int NES_HEIGHT = 240;
         private const int SCALE = 3;
 
-        private EmulatorState _state = EmulatorState.Running;
         private string _currentRomPath;
 
         // Cached NES palette (RGB565 format) - prevents allocation on every pixel conversion
@@ -129,10 +121,20 @@ namespace corenes
             apu.Reset();
 
             Console.WriteLine("CoreNES - NES Emulator");
-            Console.WriteLine("Press ESC or F1 to open menu");
             if (!string.IsNullOrEmpty(_currentRomPath))
             {
                 Console.WriteLine($"Loaded ROM: {_currentRomPath}");
+            }
+
+            // Create native macOS menu if available
+            if (MacOSMenu.IsAvailable())
+            {
+                MacOSMenu.CreateApplicationMenu();
+                Console.WriteLine("Use File menu or press Cmd+O to load ROM");
+            }
+            else
+            {
+                Console.WriteLine("Press Ctrl+O to load ROM");
             }
 
             // Run emulation loop
@@ -156,46 +158,34 @@ namespace corenes
                     }
                     else if (evt.type == SDL_EventType.SDL_EVENT_KEY_DOWN)
                     {
-                        HandleKeyPress(evt.key.key, ref running);
+                        HandleKeyPress(evt.key.key, evt.key.mod, ref running);
                     }
                 }
 
-                // Only run emulation if not paused
-                if (_state == EmulatorState.Running)
+                // Run one CPU instruction
+                cpuCycles = this.cpu.Step();
+
+                // PPU runs 3 times per CPU cycle
+                ppuCycles = cpuCycles * 3;
+                for (int i = 0; i < ppuCycles; i++)
                 {
-                    // Run one CPU instruction
-                    cpuCycles = this.cpu.Step();
-
-                    // PPU runs 3 times per CPU cycle
-                    ppuCycles = cpuCycles * 3;
-                    for (int i = 0; i < ppuCycles; i++)
-                    {
-                        ppu.Step();
-                    }
-
-                    // APU runs once per CPU cycle
-                    for (int i = 0; i < cpuCycles; i++)
-                    {
-                        apu.Step();
-                    }
-
-                    // Render frame only when PPU signals a frame is complete (60 FPS)
-                    if (ppu.IsFrameReady())
-                    {
-                        RenderFrame();
-                        ppu.ClearFrameReady();
-
-                        // Output audio samples when we render a frame
-                        OutputAudio();
-                    }
+                    ppu.Step();
                 }
-                else if (_state == EmulatorState.Menu)
+
+                // APU runs once per CPU cycle
+                for (int i = 0; i < cpuCycles; i++)
                 {
-                    // Render last frame with menu overlay
+                    apu.Step();
+                }
+
+                // Render frame only when PPU signals a frame is complete (60 FPS)
+                if (ppu.IsFrameReady())
+                {
                     RenderFrame();
-                    RenderMenu();
-                    SDL3.SDL_RenderPresent(renderer);
-                    SDL3.SDL_Delay(16); // ~60 FPS when paused
+                    ppu.ClearFrameReady();
+
+                    // Output audio samples when we render a frame
+                    OutputAudio();
                 }
             }
 
@@ -235,39 +225,26 @@ namespace corenes
             SDL3.SDL_RenderPresent(renderer);
         }
 
-        private void HandleKeyPress(SDL_Keycode key, ref bool running)
+        private void HandleKeyPress(SDL_Keycode key, SDL_Keymod mod, ref bool running)
         {
-            if (_state == EmulatorState.Running)
+            // Check for Cmd+O (macOS) or Ctrl+O (other platforms)
+            bool isCommandOrCtrl = (mod & SDL_Keymod.SDL_KMOD_GUI) != 0 || (mod & SDL_Keymod.SDL_KMOD_CTRL) != 0;
+
+            if (key == SDL_Keycode.SDLK_o && isCommandOrCtrl)
             {
-                switch (key)
-                {
-                    case SDL_Keycode.SDLK_ESCAPE:
-                        _state = EmulatorState.Menu;
-                        break;
-                    case SDL_Keycode.SDLK_F1:
-                        _state = EmulatorState.Menu;
-                        break;
-                }
+                LoadRomFromDialog();
             }
-            else if (_state == EmulatorState.Menu)
+            else if (key == SDL_Keycode.SDLK_q && isCommandOrCtrl)
             {
-                switch (key)
-                {
-                    case SDL_Keycode.SDLK_ESCAPE:
-                    case SDL_Keycode.SDLK_r:
-                        _state = EmulatorState.Running;
-                        break;
-                    case SDL_Keycode.SDLK_o:
-                        LoadRomFromDialog();
-                        break;
-                    case SDL_Keycode.SDLK_q:
-                        running = false;
-                        break;
-                }
+                running = false;
+            }
+            else if (key == SDL_Keycode.SDLK_ESCAPE)
+            {
+                running = false;
             }
         }
 
-        private void LoadRomFromDialog()
+        public void LoadRomFromDialog()
         {
             try
             {
@@ -284,62 +261,12 @@ namespace corenes
                     ppu.Reset();
                     apu.Reset();
 
-                    // Resume emulation
-                    _state = EmulatorState.Running;
-
                     Console.WriteLine($"Loaded ROM: {_currentRomPath}");
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error loading ROM: {ex.Message}");
-            }
-        }
-
-        private unsafe void RenderMenu()
-        {
-            // Draw semi-transparent overlay
-            SDL3.SDL_SetRenderDrawBlendMode(renderer, SDL_BlendMode.SDL_BLENDMODE_BLEND);
-            SDL3.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 180);
-            SDL3.SDL_FRect overlayRect = new SDL_FRect { x = 0, y = 0, w = NES_WIDTH * SCALE, h = NES_HEIGHT * SCALE };
-            SDL3.SDL_RenderFillRect(renderer, &overlayRect);
-
-            // Draw menu title
-            DrawText("=== MENU ===", 280, 200, 2.0f);
-            DrawText("R - Resume", 260, 280, 1.5f);
-            DrawText("O - Load ROM", 260, 320, 1.5f);
-            DrawText("Q - Quit", 260, 360, 1.5f);
-
-            if (!string.IsNullOrEmpty(_currentRomPath))
-            {
-                string romName = Path.GetFileName(_currentRomPath);
-                DrawText($"Current: {romName}", 200, 450, 1.0f);
-            }
-        }
-
-        private unsafe void DrawText(string text, int x, int y, float scale)
-        {
-            // Simple box-based text rendering (each character is a 6x8 box)
-            int charWidth = (int)(6 * scale);
-            int charHeight = (int)(8 * scale);
-            int spacing = (int)(2 * scale);
-
-            for (int i = 0; i < text.Length; i++)
-            {
-                SDL_FRect charRect = new SDL_FRect
-                {
-                    x = x + i * (charWidth + spacing),
-                    y = y,
-                    w = charWidth,
-                    h = charHeight
-                };
-
-                SDL3.SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-                SDL3.SDL_RenderFillRect(renderer, &charRect);
-
-                // Draw character outline
-                SDL3.SDL_SetRenderDrawColor(renderer, 100, 100, 255, 255);
-                SDL3.SDL_RenderRect(renderer, &charRect);
             }
         }
 

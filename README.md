@@ -9,7 +9,7 @@ A cross-platform NES (Nintendo Entertainment System) emulator written in C# with
 - **Complete emulation**: CPU, PPU, and APU fully implemented
 - **Full audio**: All 5 NES audio channels with accurate mixing
 - **Bug-free**: All major emulation bugs fixed for Super Mario Bros compatibility
-- **User-friendly menu**: In-game menu with file browser for loading ROMs
+- **Native macOS menu**: Standard application menu bar on macOS with File menu
 - **Performance optimized**: Frame-based rendering at 60 FPS with minimal CPU usage
 
 ## Requirements
@@ -46,22 +46,23 @@ dotnet run
 dotnet run path/to/your/rom.nes
 ```
 
-### Option 3: Load ROM via menu
+### Option 3: Load ROM via File Dialog
 
 1. Run without arguments: `dotnet run`
-2. Press **ESC** or **F1** to open the menu
-3. Press **O** to open file dialog and select ROM
+2. Use **File > Open ROM...** menu (macOS) or press **Cmd+O** / **Ctrl+O**
+3. Select your ROM file
 
 ## Controls
 
-### During Emulation
-- **ESC** or **F1**: Open menu
+### Keyboard Shortcuts
+- **Cmd+O** (macOS) / **Ctrl+O** (other): Open ROM file dialog
+- **Cmd+Q** (macOS) / **Ctrl+Q** (other): Quit emulator
+- **ESC**: Quit emulator
 - Window close button: Exit emulator
 
-### In Menu
-- **R** or **ESC**: Resume emulation
-- **O**: Open file dialog to load new ROM
-- **Q**: Quit emulator
+### macOS Application Menu
+- **File > Open ROM...** (Cmd+O): Load new ROM file
+- **CoreNES > Quit CoreNES** (Cmd+Q): Exit emulator
 
 ## ROM Format
 
@@ -119,6 +120,7 @@ All 10 critical bugs preventing Super Mario Bros from working have been fixed:
 - **Framework**: .NET 10.0
 - **Graphics & Audio**: SDL3-CS (ppy.SDL3-CS package)
 - **File Dialogs**: NativeFileDialogExtendedSharp
+- **macOS Integration**: Native menu bar using Objective-C runtime P/Invoke
 - **Target Platforms**: Windows, macOS, Linux
 
 ## Project Structure
@@ -132,6 +134,7 @@ corenes/
 ├── Cartridge.cs    - ROM loading (iNES format)
 ├── Mapper0.cs      - NROM mapper (CHR & PRG ROM)
 ├── Emulator.cs     - Main emulator with SDL3 rendering & audio
+├── MacOSMenu.cs    - Native macOS menu bar (AppKit integration)
 └── Program.cs      - Entry point
 ```
 
